@@ -1,0 +1,28 @@
+{
+  "version": "6.1.3",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "person",
+      "points": [
+        [
+          111.59615384615384,
+          211.80769230769232
+        ],
+        [
+          361.5961538461538,
+          379.11538461538464
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "rectangle",
+      "flags": {},
+      "mask": null
+    }
+  ],
+  "imagePath": "Capture d'écran 2026-05-01 115918.png",
+  "imageData": null,
+  "imageHeight": 414,
+  "imageWidth": 553
+}

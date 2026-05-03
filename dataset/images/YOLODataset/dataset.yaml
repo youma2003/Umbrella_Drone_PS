@@ -1,0 +1,6 @@
+﻿path: C:/Users/Maryem/Desktop/ps-drone/dataset/images/YOLODataset
+train: images/train
+val:   images/val
+
+nc: 1
+names: ['person']

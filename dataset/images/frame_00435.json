@@ -1,0 +1,28 @@
+{
+  "version": "6.1.3",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "person",
+      "points": [
+        [
+          443.88888888888886,
+          428.8888888888889
+        ],
+        [
+          636.3711583924351,
+          480.0
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "rectangle",
+      "flags": {},
+      "mask": null
+    }
+  ],
+  "imagePath": "frame_00435.jpg",
+  "imageData": null,
+  "imageHeight": 480,
+  "imageWidth": 640
+}

@@ -1,0 +1,28 @@
+{
+  "version": "6.1.3",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "personne",
+      "points": [
+        [
+          385.62500000000006,
+          371.8181818181818
+        ],
+        [
+          308.35227272727275,
+          478.0681818181818
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "rectangle",
+      "flags": {},
+      "mask": null
+    }
+  ],
+  "imagePath": "frame_00177_77aaacad.jpg",
+  "imageData": null,
+  "imageHeight": 480,
+  "imageWidth": 640
+}

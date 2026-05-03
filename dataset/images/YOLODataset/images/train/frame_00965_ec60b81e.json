@@ -1,0 +1,28 @@
+{
+  "version": "6.1.3",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "personne",
+      "points": [
+        [
+          324.2613636363636,
+          284.8863636363636
+        ],
+        [
+          626.534090909091,
+          476.93181818181813
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "rectangle",
+      "flags": {},
+      "mask": null
+    }
+  ],
+  "imagePath": "frame_00965_ec60b81e.jpg",
+  "imageData": null,
+  "imageHeight": 480,
+  "imageWidth": 640
+}

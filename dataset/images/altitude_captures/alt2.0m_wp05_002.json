@@ -1,0 +1,28 @@
+{
+  "version": "6.1.3",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "person",
+      "points": [
+        [
+          58.352272727272734,
+          477.49999999999994
+        ],
+        [
+          381.07954545454544,
+          128.0681818181818
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "rectangle",
+      "flags": {},
+      "mask": null
+    }
+  ],
+  "imagePath": "alt2.0m_wp05_002.jpg",
+  "imageData": null,
+  "imageHeight": 480,
+  "imageWidth": 640
+}

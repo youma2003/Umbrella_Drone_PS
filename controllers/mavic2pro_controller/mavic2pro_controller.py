@@ -1,3 +1,8 @@
+import os
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['OMP_NUM_THREADS']      = '1'
+os.environ['MKL_NUM_THREADS']      = '1'
+
 from controller import Robot, Compass, GPS, Gyro, InertialUnit, Keyboard, LED, Motor
 import math
 import numpy as np
@@ -8,6 +13,21 @@ from ultralytics import YOLO
 print("[INIT] Loading YOLO model...")
 model = YOLO(r"C:\Users\Maryem\Desktop\ps-drone\controllers\mavic2pro_controller\best.pt")
 print("[INIT] YOLO ready.")
+
+# ── LIVE CAPTURE ──────────────────────────────────────────────────────────────
+# Appuie sur 'C' pendant la simulation pour activer/désactiver la sauvegarde.
+# Les images sont sauvegardées avec leur annotation YOLO (.txt) — prêtes à
+# l'emploi pour le ré-entraînement sans labellisation manuelle.
+_HERE      = os.path.dirname(os.path.abspath(__file__))
+SAVE_DIR   = os.path.normpath(os.path.join(_HERE, '..', '..', 'dataset', 'images', 'live_captures'))
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+AUTO_SAVE      = False   # toggle avec la touche 'C'
+SAVE_EVERY     = 15      # sauvegarde 1 frame toutes les N frames YOLO détectées
+_save_ctr      = 0
+_saved_total   = 0
+_c_was_pressed = False   # edge-detector : évite le double-toggle sur key-repeat
+print(f"[CAPTURE] Appuie sur 'C' pour activer la capture live → {SAVE_DIR}")
 
 def clamp(val, lo, hi):
     return max(lo, min(val, hi))
@@ -51,12 +71,14 @@ for m in motors:
     m.setVelocity(1.0)
 
 # ── FLIGHT PARAMETERS ─────────────────────────────────────────────────────────
-TARGET_ALT  = 4.0    # altitude cible — 4m donne un demi-champ de 2.18m
-                     # à 2 m/s le piéton prend 1.09s à sortir du frame (vs 0.82s à 3m)
-STABLE_DIST = 0.35   # seuil stabilité (mètres)
+SEARCH_ALT    = 4.0    # altitude en mode recherche — FOV 1.8 rad couvre ~10m à 4m
+FOLLOW_ALT    = 2.3    # altitude parapluie — ~0.5m au-dessus de la tête du piéton
+TARGET_ALT    = SEARCH_ALT
+STABLE_DIST   = 0.35   # seuil stabilité (mètres)
+DESCENT_RATE  = 0.5    # m/s — vitesse de descente progressive vers le piéton
 
 # FOV caméra (depuis mavic_2_pro.wbt : fieldOfView 1)
-CAM_HFOV = 1.0                                       # radians (≈ 57°)
+CAM_HFOV = 1.8                                       # radians (≈ 103°) — grand angle pour suivi proche
 CAM_VFOV = 2 * math.atan(math.tan(CAM_HFOV / 2)     # dérivé depuis le ratio
                          * CAM_H / CAM_W)            # ≈ 0.775 rad (≈ 44°)
 
@@ -64,12 +86,12 @@ CAM_VFOV = 2 * math.atan(math.tan(CAM_HFOV / 2)     # dérivé depuis le ratio
 YOLO_EVERY    = 2
 LOST_TOLERANE = 20  # was 10 — gives 320ms recovery window at dt=8ms
 
-KP          = 1.20   # reduced: less oscillation around target
-KI          = 0.50
-KD          = 0.10
-VEL_ALPHA   = 0.20   # more filtering: YOLO box noise is smoothed over more frames
+KP          = 1.60   # plus fort : réduit l'erreur de position résiduelle
+KI          = 0.06   # très bas : évite le windup intégral
+KD          = 0.45   # plus élevé : anticipe mieux le mouvement du piéton
+VEL_ALPHA   = 0.35   # mis à jour plus vite : vitesse estimée réagit aux changements
 VEL_RAW_MAX = 4.0
-SMOOTH_F    = 0.55   # slower command transitions → less visible jitter
+SMOOTH_F    = 0.70   # plus réactif : divise par 2 le lag sur les changements de direction
 
 # ── STATE ─────────────────────────────────────────────────────────────────────
 state      = "takeoff"
@@ -98,12 +120,14 @@ def detect(raw_image):
     """YOLO sur l'image brute. Retourne liste de (x1,y1,x2,y2,conf)."""
     img = np.frombuffer(raw_image, dtype=np.uint8).reshape((CAM_H, CAM_W, 4))
     rgb = img[:, :, :3][:, :, ::-1].copy()
-    results = model(rgb, verbose=False, classes=[0])
+    # imgsz=640 : on garde la résolution native — à 6m la personne fait ~60px,
+    # si on laisse YOLO réduire à 320 elle ne fait plus que ~30px (limite de détection).
+    results = model(rgb, verbose=False, classes=[0], imgsz=640)
     boxes = []
     for box in results[0].boxes:
         x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
         conf = float(box.conf[0])
-        if conf > 0.40:
+        if conf > 0.25:   # seuil abaissé : 0.40 → 0.25 pour capturer les détections faibles
             boxes.append((float(x1), float(y1), float(x2), float(y2), conf))
     return boxes
 
@@ -174,6 +198,18 @@ def show_debug(raw_image, boxes, target, state_str, dist_m):
     cv2.waitKey(1)
 
 
+# ── LIVE CAPTURE HELPER ───────────────────────────────────────────────────────
+def _save_frame(raw_image, altitude):
+    """Sauvegarde l'image brute pour labellisation manuelle."""
+    global _saved_total
+    img  = np.frombuffer(raw_image, dtype=np.uint8).reshape((CAM_H, CAM_W, 4))
+    bgr  = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+    stem = f"live_alt{altitude:.1f}m_{_saved_total:05d}"
+    cv2.imwrite(os.path.join(SAVE_DIR, f"{stem}.jpg"), bgr)
+    _saved_total += 1
+    print(f"[CAPTURE] {stem}.jpg  (total: {_saved_total})")
+
+
 # ── STABILISATION INITIALE ────────────────────────────────────────────────────
 dt_s = timestep / 1000.0   # pas de simulation en secondes (ex: 8ms → 0.008)
 
@@ -204,6 +240,7 @@ while robot.step(timestep) != -1:
 
     # ── CLAVIER (contrôle manuel) ─────────────────────────────────────────────
     roll_d = pitch_d = yaw_d = 0.0
+    c_pressed_now = False
     key = kb.getKey()
     while key > 0:
         if   key == kb.UP:             pitch_d = -2.0
@@ -218,7 +255,16 @@ while robot.step(timestep) != -1:
         elif key == kb.SHIFT+kb.DOWN:
             TARGET_ALT -= 0.05
             print(f"[ALT] → {TARGET_ALT:.2f}m")
+        elif key == ord('C'):
+            c_pressed_now = True
         key = kb.getKey()
+
+    # Toggle uniquement sur le front montant (pressé → relâché)
+    if c_pressed_now and not _c_was_pressed:
+        AUTO_SAVE = not AUTO_SAVE
+        print(f"[CAPTURE] {'ACTIVÉE' if AUTO_SAVE else 'DÉSACTIVÉE'}  "
+              f"(total sauvegardé : {_saved_total})")
+    _c_was_pressed = c_pressed_now
 
     frame_ctr += 1
 
@@ -229,7 +275,8 @@ while robot.step(timestep) != -1:
         smooth_roll_p = smooth_pitch_p = 0.0
         if abs(altitude - TARGET_ALT) < 0.15:
             state = "search"
-            print(f"[STATE] {altitude:.2f}m atteint → SEARCH")
+            TARGET_ALT = SEARCH_ALT
+            print(f"[STATE] {altitude:.2f}m atteint → SEARCH (montée à {SEARCH_ALT}m)")
 
     elif state == "search":
         smooth_roll = smooth_pitch = smooth_yaw = 0.0
@@ -245,13 +292,17 @@ while robot.step(timestep) != -1:
                 prev_dx = prev_dy = None
                 vel_x = vel_y = 0.0
                 state = "follow"
-                print("[STATE] Piéton détecté → FOLLOW")
+                # Ne pas changer TARGET_ALT ici : la descente se fait
+                # progressivement dans follow, uniquement quand le piéton
+                # est visible, pour garder le champ de vision sur lui.
+                print(f"[STATE] Piéton détecté → FOLLOW (descente progressive {altitude:.1f}m → {FOLLOW_ALT}m)")
 
     elif state == "follow":
         # Sécurité altitude
-        if altitude < 1.5:
+        if altitude < 2.0:
             smooth_roll = smooth_pitch = smooth_yaw = 0.0
             state = "search"
+            TARGET_ALT = SEARCH_ALT
             print(f"[SAFETY] Trop bas ({altitude:.2f}m) → SEARCH")
 
         raw = camera.getImage()
@@ -268,6 +319,16 @@ while robot.step(timestep) != -1:
                 last_dx, last_dy = dx_m, dy_m
 
                 yolo_dt = YOLO_EVERY * dt_s
+
+                # ── DESCENTE PROGRESSIVE ─────────────────────────────────
+                # On descend uniquement quand le piéton est visible.
+                # Si on le perd pendant la descente, on maintient l'altitude
+                # et on reprend dès qu'il réapparaît.
+                if TARGET_ALT > FOLLOW_ALT:
+                    TARGET_ALT = max(FOLLOW_ALT,
+                                     TARGET_ALT - DESCENT_RATE * YOLO_EVERY * dt_s)
+                    if TARGET_ALT == FOLLOW_ALT:
+                        print(f"[STATE] Altitude de suivi {FOLLOW_ALT}m atteinte")
 
                 # ── DÉCISION : STABLE ou FOLLOW ──────────────────────────
                 if dist_m < STABLE_DIST:
@@ -292,9 +353,6 @@ while robot.step(timestep) != -1:
 
                 else:
                     # ── FOLLOW : PID + velocity feedforward ───────────────
-                    # EMA update only here (far from target = reliable signal).
-                    # prev_dx = None after any detection gap → first frame after
-                    # reckoning has no vel update, preventing velocity explosion.
                     if prev_dx is not None:
                         raw_vx = (dx_m - prev_dx) / yolo_dt
                         raw_vy = (dy_m - prev_dy) / yolo_dt
@@ -307,22 +365,33 @@ while robot.step(timestep) != -1:
                         vel_y = VEL_ALPHA * raw_vy + (1.0 - VEL_ALPHA) * vel_y
                     prev_dx, prev_dy = dx_m, dy_m
 
-                    pid_roll  = clamp(-dx_m * KP - integral_x * KI - vel_x * KD, -2.5, 2.5)
-                    pid_pitch = clamp( dy_m * KP + integral_y * KI + vel_y * KD, -2.5, 2.5)
+                    # Frein de proximité : vitesse max proportionnelle à la distance.
+                    # Quand le drone s'approche du piéton, il ralentit automatiquement
+                    # et ne peut plus le dépasser même si l'intégrale a du windup.
+                    max_cmd = clamp(dist_m * 2.5, 0.4, 2.5)
+
+                    pid_roll  = clamp(-dx_m * KP - integral_x * KI - vel_x * KD, -max_cmd, max_cmd)
+                    pid_pitch = clamp( dy_m * KP + integral_y * KI + vel_y * KD, -max_cmd, max_cmd)
 
                     smooth_roll_p  += SMOOTH_F * (pid_roll  - smooth_roll_p)
                     smooth_pitch_p += SMOOTH_F * (pid_pitch - smooth_pitch_p)
 
-                    smooth_roll  = clamp(smooth_roll_p,  -2.5, 2.5)
-                    smooth_pitch = clamp(smooth_pitch_p, -2.5, 2.5)
+                    smooth_roll  = clamp(smooth_roll_p,  -max_cmd, max_cmd)
+                    smooth_pitch = clamp(smooth_pitch_p, -max_cmd, max_cmd)
                     smooth_yaw  *= 0.9
 
-                    print(f"[FOLLOW] dist={dist_m:.2f}m "
+                    print(f"[FOLLOW] dist={dist_m:.2f}m max_cmd={max_cmd:.2f} "
                           f"vel=({vel_x:+.2f},{vel_y:+.2f}) | "
                           f"cmd=({smooth_roll:+.2f},{smooth_pitch:+.2f}) | "
                           f"alt={altitude:.2f}m")
 
                 show_debug(raw, boxes, target, "FOLLOW", dist_m)
+
+                # ── LIVE CAPTURE ─────────────────────────────────────────
+                if AUTO_SAVE:
+                    _save_ctr += 1
+                    if _save_ctr % SAVE_EVERY == 0:
+                        _save_frame(raw, altitude)
 
             else:
                 # ── DEAD RECKONING : piéton hors frame ───────────────────
@@ -343,11 +412,15 @@ while robot.step(timestep) != -1:
                 show_debug(raw, boxes, None, f"RECKONING({lost_frames}/{LOST_TOLERANE})", -1)
 
                 if lost_frames < LOST_TOLERANE:
-                    # Commands decay toward zero as reckoning lengthens — prevents
-                    # the drone from flying at max tilt for 20 frames and losing altitude.
-                    fade = 0.92 ** (lost_frames - 1)
-                    dr_roll  = clamp((-last_dx * KP - integral_x * KI - vel_x * KD) * fade, -1.5, 1.5)
-                    dr_pitch = clamp(( last_dy * KP + integral_y * KI + vel_y * KD) * fade, -1.5, 1.5)
+                    # Prédit où est le piéton maintenant en prolongeant sa vitesse.
+                    # Si le piéton marchait vers la droite quand la détection s'est
+                    # perdue, il est probablement encore plus à droite maintenant.
+                    fade   = 0.92 ** (lost_frames - 1)
+                    lost_t = lost_frames * YOLO_EVERY * dt_s
+                    pred_dx = clamp(last_dx + vel_x * lost_t, -3.0, 3.0)
+                    pred_dy = clamp(last_dy + vel_y * lost_t, -3.0, 3.0)
+                    dr_roll  = clamp((-pred_dx * KP - integral_x * KI - vel_x * KD) * fade, -1.5, 1.5)
+                    dr_pitch = clamp(( pred_dy * KP + integral_y * KI + vel_y * KD) * fade, -1.5, 1.5)
                     smooth_roll_p  += SMOOTH_F * (dr_roll  - smooth_roll_p)
                     smooth_pitch_p += SMOOTH_F * (dr_pitch - smooth_pitch_p)
                     smooth_roll  = clamp(smooth_roll_p,  -1.5, 1.5)
@@ -359,7 +432,8 @@ while robot.step(timestep) != -1:
                     smooth_yaw   *= 0.5
                     lost_frames   = 0
                     state         = "search"
-                    print("[STATE] Piéton perdu → SEARCH")
+                    TARGET_ALT    = SEARCH_ALT
+                    print(f"[STATE] Piéton perdu → SEARCH (remontée à {SEARCH_ALT}m)")
 
     # ── INTÉGRALE ACCUMULÉE À CHAQUE FRAME ────────────────────────────────────
     if state == "follow":

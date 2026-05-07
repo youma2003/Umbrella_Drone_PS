@@ -1,0 +1,28 @@
+{
+  "version": "6.1.3",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "person",
+      "points": [
+        [
+          418.57954545454544,
+          322.3863636363636
+        ],
+        [
+          392.4431818181818,
+          350.7954545454545
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "rectangle",
+      "flags": {},
+      "mask": null
+    }
+  ],
+  "imagePath": "alt6.0m_0006.jpg",
+  "imageData": null,
+  "imageHeight": 480,
+  "imageWidth": 640
+}

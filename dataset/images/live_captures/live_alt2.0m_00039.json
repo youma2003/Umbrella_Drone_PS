@@ -1,0 +1,28 @@
+{
+  "version": "6.1.3",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "person",
+      "points": [
+        [
+          496.9886363636363,
+          94.54545454545453
+        ],
+        [
+          2.670454545454575,
+          479.20454545454544
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "rectangle",
+      "flags": {},
+      "mask": null
+    }
+  ],
+  "imagePath": "live_alt2.0m_00039.jpg",
+  "imageData": null,
+  "imageHeight": 480,
+  "imageWidth": 640
+}

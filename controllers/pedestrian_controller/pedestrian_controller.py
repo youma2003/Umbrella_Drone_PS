@@ -8,6 +8,7 @@ SPEED   = 0.4    # m/s — calm walking pace
 FIXED_Z = 1.29   # vertical axis in this world — never touched
 
 # Durations expressed in simulation steps (timestep = 8 ms → 125 steps/s)
+INITIAL_STAND_STEPS = 1500  # ~12 s — stand still at simulation start before moving
 MIN_WALK_STEPS = 750    # ~6 s  — long enough for drone to lock on and follow
 MAX_WALK_STEPS = 2000   # ~16 s — pedestrian keeps going so drone has time to stabilise
 MIN_WAIT_STEPS = 100    # ~0.8 s
@@ -23,14 +24,22 @@ DIRECTIONS = [
 
 trans_field = robot.getSelf().getField("translation")
 
+initial_stand_remaining = INITIAL_STAND_STEPS
 current_dir     = random.choice(DIRECTIONS)
 steps_remaining = random.randint(MIN_WALK_STEPS, MAX_WALK_STEPS)
 is_waiting      = False
 
-print("[PED] Pedestrian started.")
+print("[PED] Pedestrian started — standing still for initial period.")
 
 while robot.step(timestep) != -1:
     dt = timestep / 1000.0
+
+    # ── INITIAL STANDING PHASE ────────────────────────────────────────────────
+    if initial_stand_remaining > 0:
+        initial_stand_remaining -= 1
+        if initial_stand_remaining == 0:
+            print("[PED] Initial stand complete — starting movement.")
+        continue
 
     # ── COUNT DOWN current action ─────────────────────────────────────────────
     steps_remaining -= 1
